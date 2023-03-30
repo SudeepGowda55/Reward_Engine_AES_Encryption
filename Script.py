@@ -21,8 +21,6 @@ from dotenv import load_dotenv
 from Cryptodome.Cipher import AES
 from Cryptodome.Protocol.KDF import scrypt
 from Cryptodome.Util.Padding import pad, unpad
-from pyqldb.config.retry_config import RetryConfig
-from pyqldb.driver.qldb_driver import QldbDriver
 from datetime import datetime
 from datetime import date
 import boto3
@@ -83,8 +81,8 @@ def EncryptData():
                 port= 3302,
                 database="myDB"
         )
-        retry_config = RetryConfig(retry_limit=3)
-        qldb_driver = QldbDriver("IPFSCIDLedger", retry_config=retry_config)
+        dynamodb_instance = boto3.resource("dynamodb")
+        table = dynamodb_instance.Table("IPFS_USER-CID")
         Data=collection.find()
         for datas in Data:
 
@@ -129,15 +127,23 @@ def EncryptData():
 
                 USER_PUBLIC_ADDRESS=Address
 
-                user_meta_data = { 
-                        'CID': IPFS_CID,
-                        'DATE': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-                        'User_Public_Address': USER_PUBLIC_ADDRESS
-                }
+                try:
+                    output = table.put_item(
+                        Item={
+                             "UserPublicAddress": USER_PUBLIC_ADDRESS,
+                             "DeployedDate": datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f"),
+                             "IpfsCID": IPFS_CID
+                       }
+                    )
 
-                qldb_driver.execute_lambda(lambda x: insert_documents(x, user_meta_data))
+                    status_code = output["ResponseMetadata"]["HTTPStatusCode"]
+                    if(status_code == 200):
+                        print("Record entered to DynamoDB successfully")
+                    else:
+                        print("Error Occur During Record Insertion")
 
-                print(f"Document with CID ${IPFS_CID} Inserted to USER_ADDRESS_IPFS_CID Table")
+                except Exception as e:
+                        print(f"An error occurred: {str(e)}")
 
 
                 # Decryption Part
@@ -202,28 +208,3 @@ while 1:
         time.sleep(1)   
 
 # DynamoDB Records Entry Script 
-
-def put_item():
-    dynamodb_instance = boto3.resource("dynamodb")
-    table = dynamodb_instance.Table("IPFS_USER-CID")
-
-    try:
-        output = table.put_item(
-            Item={
-                "UserPublicAddress": "0xsgduygsdbhsdgbs",
-                "DeployedDate": datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f"),
-                "IpfsCID": "0vfrwfccwfvwfcxwgfcxwggvfwc"
-            }
-        )
-
-        status_code = output["ResponseMetadata"]["HTTPStatusCode"]
-
-        if(status_code == 200):
-            print("Record entered to DynamoDB successfully")
-        else:
-            print("Error Occur During Record Insertion")
-
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-
-put_item()
